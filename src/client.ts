@@ -1,6 +1,5 @@
-import { CancellationToken } from "aurumjs";
+import { CancellationToken, RemoteProtocol } from "aurumjs";
 import * as ws from "ws";
-import { ServerProtocol } from "./protocol";
 
 export class Client {
     public readonly subscriptions: Map<string, CancellationToken>;
@@ -12,7 +11,7 @@ export class Client {
         this.subscriptions = new Map();
     }
 
-    public sendMessage(messageType: ServerProtocol, payload: any) {
+    public sendMessage(messageType: RemoteProtocol, payload: any) {
         this.connection.send(JSON.stringify({ type: messageType, ...payload }));
     }
 }

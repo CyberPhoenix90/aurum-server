@@ -8,7 +8,6 @@ import { Server as HttpServer } from "http";
 import { Server as HttpsServer } from "https";
 import * as ws from "ws";
 import { Client } from "./client";
-import { ServerProtocol } from "./protocol";
 
 export interface AurumServerConfig {
     reuseServer?: HttpServer | HttpsServer;
@@ -63,7 +62,7 @@ export class AurumServer {
         return this.wsServerClients;
     }
 
-    public static create(config?: AurumServerConfig): Promise<AurumServer> {
+    public static create(config?: AurumServerConfig): AurumServer {
         const server = new AurumServer({
             onClientConnected: config.onClientConnected,
             onClientDisconnected: config.onClientDisconnected,
@@ -72,40 +71,40 @@ export class AurumServer {
             port: config?.port ?? 8080,
         });
 
-        return new Promise((resolve) => {
-            server.wsServer = new ws.Server({
-                server: config.reuseServer,
-                port: config.port,
+        server.wsServer = new ws.Server({
+            server: config.reuseServer,
+            port: config.port,
+        });
+
+        server.wsServerClients = [];
+
+        server.wsServer.on("connection", (ws: ws) => {
+            const client = new Client(ws);
+            server.wsServerClients.push(client);
+            console.log(
+                //@ts-ignore
+                `Client connected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
+            );
+
+            ws.on("message", (data) => {
+                server.processMessage(client, data);
             });
 
-            server.wsServerClients = [];
-
-            server.wsServer.on("connection", (ws: ws) => {
-                const client = new Client(ws);
-                server.wsServerClients.push(client);
+            ws.on("close", () => {
                 console.log(
                     //@ts-ignore
-                    `Client connected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
+                    `Client disconnected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
                 );
-
-                ws.on("message", (data) => {
-                    server.processMessage(client, data);
-                });
-
-                ws.on("close", () => {
-                    console.log(
-                        //@ts-ignore
-                        `Client disconnected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
-                    );
-                    server.wsServerClients.splice(
-                        server.wsServerClients.indexOf(client),
-                        1
-                    );
-                    config.onClientDisconnected?.(client);
-                });
-                config.onClientConnected?.(client);
+                server.wsServerClients.splice(
+                    server.wsServerClients.indexOf(client),
+                    1
+                );
+                config.onClientDisconnected?.(client);
             });
+            config.onClientConnected?.(client);
         });
+
+        return server;
     }
 
     private processMessage(sender: Client, data: ws.Data): void {
@@ -142,17 +141,17 @@ export class AurumServer {
             const token = new CancellationToken();
             sender.subscriptions.set(id, token);
             endpoint.source.listen((value) => {
-                sender.sendMessage(ServerProtocol.UPDATE_DATASOURCE, {
+                sender.sendMessage(RemoteProtocol.UPDATE_DATASOURCE, {
                     id,
                     value,
                 });
             }, token);
-            sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_OK, {
+            sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_OK, {
                 id,
                 value: endpoint.source.value,
             });
         } else {
-            sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_ERR, {
+            sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_ERR, {
                 id,
                 errorCode: 0,
                 error: "No such datasource",
@@ -171,12 +170,12 @@ export class AurumServer {
                 delete change.previousState;
                 delete change.newState;
             }
-            sender.sendMessage(ServerProtocol.UPDATE_DATASOURCE, {
+            sender.sendMessage(RemoteProtocol.UPDATE_DATASOURCE, {
                 id,
                 change,
             });
         }, token);
-        sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_OK, {
+        sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_OK, {
             id,
             value: endpoint.source.getData(),
         });
