@@ -1,0 +1,26 @@
+{
+    "name": "aurum-server",
+    "version": "1.0.0",
+    "description": "Websocket powered webserver for Aurum.js allowing the sychronization between datasources of a server and a client",
+    "main": "index.js",
+    "dependencies": {
+        "@types/ws": "^7.2.7",
+        "aurumjs": "^0.5.49",
+        "ws": "^7.3.1"
+    },
+    "devDependencies": {},
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/CyberPhoenix90/aurum-server.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "bugs": {
+        "url": "https://github.com/CyberPhoenix90/aurum-server/issues"
+    },
+    "homepage": "https://github.com/CyberPhoenix90/aurum-server#readme"
+}

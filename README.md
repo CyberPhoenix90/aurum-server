@@ -1,3 +1,4 @@
 # Aurum server
-Aurum.js centric, Websocket powered alternative to REST or GraphQL allowing to expose data sources by URL and have clients listen to updates through the URL
-Can easily be used alongside any existing server framework. Allows exposing aurum datasources through the net.
+Websocket powered webserver for Aurum.js allowing the sychronization between datasources of a server and a client. Useful to make full stack streams that
+like the ability to synchronize the server state with the DOM in near real time
+Still work in progress not yet usable
