@@ -4,11 +4,14 @@ import {
     DataSource,
     RemoteProtocol,
 } from "aurumjs";
+import { Server as HttpServer } from "http";
+import { Server as HttpsServer } from "https";
 import * as ws from "ws";
 import { Client } from "./client";
 import { ServerProtocol } from "./protocol";
 
 export interface AurumServerConfig {
+    reuseServer?: HttpServer | HttpsServer;
     port?: number;
     maxMessageSize?: number;
     onClientConnected?: (client: Client) => void;
@@ -62,13 +65,17 @@ export class AurumServer {
 
     public static create(config?: AurumServerConfig): Promise<AurumServer> {
         const server = new AurumServer({
+            onClientConnected: config.onClientConnected,
+            onClientDisconnected: config.onClientDisconnected,
+            reuseServer: config.reuseServer,
             maxMessageSize: config?.maxMessageSize || 1048576,
             port: config?.port ?? 8080,
         });
 
         return new Promise((resolve) => {
             server.wsServer = new ws.Server({
-                port: 8000,
+                server: config.reuseServer,
+                port: config.port,
             });
 
             server.wsServerClients = [];
@@ -131,10 +138,10 @@ export class AurumServer {
     private listenDataSource(message: any, sender: Client) {
         const id = message.id;
         if (this.exposedDataSources.has(id)) {
-            const source = this.exposedDataSources.get(id);
+            const endpoint = this.exposedDataSources.get(id);
             const token = new CancellationToken();
             sender.subscriptions.set(id, token);
-            source.listen((value) => {
+            endpoint.source.listen((value) => {
                 sender.sendMessage(ServerProtocol.UPDATE_DATASOURCE, {
                     id,
                     value,
@@ -142,7 +149,7 @@ export class AurumServer {
             }, token);
             sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_OK, {
                 id,
-                value: source.value,
+                value: endpoint.source.value,
             });
         } else {
             sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_ERR, {
@@ -153,11 +160,12 @@ export class AurumServer {
         }
     }
 
+    //@ts-ignore
     private listenArrayDataSource(id: string, sender: Client) {
-        const source = this.exposedArrayDataSources.get(id);
+        const endpoint = this.exposedArrayDataSources.get(id);
         const token = new CancellationToken();
         sender.subscriptions.set(id, token);
-        source.listen((change) => {
+        endpoint.source.listen((change) => {
             change = Object.assign({}, change);
             if (change.operation !== "merge") {
                 delete change.previousState;
@@ -170,10 +178,11 @@ export class AurumServer {
         }, token);
         sender.sendMessage(ServerProtocol.LISTEN_DATASOURCE_OK, {
             id,
-            value: source.getData(),
+            value: endpoint.source.getData(),
         });
     }
 
+    //@ts-ignore
     private cancelSubscriptionToExposedSource(sender: Client, message: any) {
         const sub = sender.subscriptions.get(message.url);
         if (sub) {
@@ -190,6 +199,9 @@ export class AurumServer {
         source: DataSource<I>,
         authenticate: (token: string, operation: "read" | "write") => boolean
     ): void {
-        this.exposedDataSources.set(id, source);
+        this.exposedDataSources.set(id, {
+            authenticator: authenticate,
+            source,
+        });
     }
 }
