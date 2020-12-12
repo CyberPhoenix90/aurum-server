@@ -99,6 +99,7 @@ export class AurumServer {
                     server.wsServerClients.indexOf(client),
                     1
                 );
+                client.dispose();
                 config.onClientDisconnected?.(client);
             });
             config.onClientConnected?.(client);
@@ -140,20 +141,25 @@ export class AurumServer {
             const endpoint = this.exposedDataSources.get(id);
             const token = new CancellationToken();
             sender.subscriptions.set(id, token);
-            endpoint.source.listen((value) => {
-                sender.sendMessage(RemoteProtocol.UPDATE_DATASOURCE, {
+
+            if (endpoint.authenticator(message.token, "read")) {
+                endpoint.source.listenAndRepeat((value) => {
+                    sender.sendMessage(RemoteProtocol.UPDATE_DATASOURCE, {
+                        id,
+                        value,
+                    });
+                }, token);
+            } else {
+                sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_ERR, {
                     id,
-                    value,
+                    errorCode: 401,
+                    error: "Unauthorized",
                 });
-            }, token);
-            sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_OK, {
-                id,
-                value: endpoint.source.value,
-            });
+            }
         } else {
             sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_ERR, {
                 id,
-                errorCode: 0,
+                errorCode: 404,
                 error: "No such datasource",
             });
         }
@@ -170,12 +176,12 @@ export class AurumServer {
                 delete change.previousState;
                 delete change.newState;
             }
-            sender.sendMessage(RemoteProtocol.UPDATE_DATASOURCE, {
+            sender.sendMessage(RemoteProtocol.UPDATE_ARRAY_DATASOURCE, {
                 id,
                 change,
             });
         }, token);
-        sender.sendMessage(RemoteProtocol.LISTEN_DATASOURCE_OK, {
+        sender.sendMessage(RemoteProtocol.UPDATE_ARRAY_DATASOURCE, {
             id,
             value: endpoint.source.getData(),
         });
@@ -196,7 +202,7 @@ export class AurumServer {
     public exposeDataSource<I>(
         id: string,
         source: DataSource<I>,
-        authenticate: (token: string, operation: "read" | "write") => boolean
+        authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
         this.exposedDataSources.set(id, {
             authenticator: authenticate,

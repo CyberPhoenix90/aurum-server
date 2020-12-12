@@ -14,4 +14,10 @@ export class Client {
     public sendMessage(messageType: RemoteProtocol, payload: any) {
         this.connection.send(JSON.stringify({ type: messageType, ...payload }));
     }
+
+    public dispose(): void {
+        for (const sub of this.subscriptions.values()) {
+            sub.cancel();
+        }
+    }
 }
