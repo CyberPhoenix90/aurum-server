@@ -2,6 +2,7 @@ import {
     ArrayDataSource,
     CancellationToken,
     DataSource,
+    DuplexDataSource,
     RemoteProtocol,
 } from "aurumjs";
 import { Server as HttpServer } from "http";
@@ -26,6 +27,14 @@ export class AurumServer {
         string,
         {
             source: DataSource<any>;
+            authenticator(token: string, operation: "read"): boolean;
+        }
+    >;
+
+    private exposedDuplexDataSources: Map<
+        string,
+        {
+            source: DuplexDataSource<any>;
             authenticator(token: string, operation: "read" | "write"): boolean;
         }
     >;
@@ -55,6 +64,7 @@ export class AurumServer {
         this.config = config;
 
         this.exposedDataSources = new Map();
+        this.exposedDuplexDataSources = new Map();
         this.exposedArrayDataSources = new Map();
     }
 
@@ -125,6 +135,12 @@ export class AurumServer {
                     case RemoteProtocol.LISTEN_DATASOURCE:
                         this.listenDataSource(message, sender);
                         break;
+                    case RemoteProtocol.LISTEN_DUPLEX_DATASOURCE:
+                        this.listenDuplexDataSource(message, sender);
+                        break;
+                    case RemoteProtocol.UPDATE_DUPLEX_DATASOURCE:
+                        this.updateDuplexDataSource(message, sender);
+                        break;
                     case RemoteProtocol.HEARTBEAT:
                         break;
                 }
@@ -161,6 +177,68 @@ export class AurumServer {
                 id,
                 errorCode: 404,
                 error: "No such datasource",
+            });
+        }
+    }
+
+    private listenDuplexDataSource(message: any, sender: Client) {
+        const id = message.id;
+        if (this.exposedDuplexDataSources.has(id)) {
+            const endpoint = this.exposedDuplexDataSources.get(id);
+            const token = new CancellationToken();
+            sender.subscriptions.set(id, token);
+
+            if (endpoint.authenticator(message.token, "read")) {
+                endpoint.source.listenAndRepeat((value) => {
+                    sender.sendMessage(
+                        RemoteProtocol.UPDATE_DUPLEX_DATASOURCE,
+                        {
+                            id,
+                            value,
+                        }
+                    );
+                }, token);
+            } else {
+                sender.sendMessage(
+                    RemoteProtocol.LISTEN_DUPLEX_DATASOURCE_ERR,
+                    {
+                        id,
+                        errorCode: 401,
+                        error: "Unauthorized",
+                    }
+                );
+            }
+        } else {
+            sender.sendMessage(RemoteProtocol.LISTEN_DUPLEX_DATASOURCE_ERR, {
+                id,
+                errorCode: 404,
+                error: "No such duplex datasource",
+            });
+        }
+    }
+
+    private updateDuplexDataSource(message: any, sender: Client) {
+        const id = message.id;
+        if (this.exposedDuplexDataSources.has(id)) {
+            const endpoint = this.exposedDuplexDataSources.get(id);
+
+            if (endpoint.authenticator(message.token, "write")) {
+                endpoint.source.updateUpstream(message.value);
+            } else {
+                sender.sendMessage(
+                    RemoteProtocol.UPDATE_DUPLEX_DATASOURCE_ERR,
+                    {
+                        id,
+                        errorCode: 401,
+                        error: "Unauthorized",
+                    }
+                );
+            }
+        } else {
+            sender.sendMessage(RemoteProtocol.UPDATE_DUPLEX_DATASOURCE_ERR, {
+                id,
+                errorCode: 404,
+                error: "No such duplex datasource",
             });
         }
     }
@@ -205,6 +283,23 @@ export class AurumServer {
         authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
         this.exposedDataSources.set(id, {
+            authenticator: authenticate,
+            source,
+        });
+    }
+
+    /**
+     * Makes data public anything pushed to the exposed source will be broadcasted to everyone listening to it
+     */
+    public exposeDuplexDataSource<I>(
+        id: string,
+        source: DuplexDataSource<I>,
+        authenticate: (
+            token: string,
+            operation: "read" | "write"
+        ) => boolean = () => true
+    ): void {
+        this.exposedDuplexDataSources.set(id, {
             authenticator: authenticate,
             source,
         });
