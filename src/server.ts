@@ -16,6 +16,7 @@ export interface AurumServerConfig {
     maxMessageSize?: number;
     onClientConnected?: (client: Client) => void;
     onClientDisconnected?: (client: Client) => void;
+    onError?: (client: Client, error: string) => void;
 }
 
 export class AurumServer {
@@ -42,21 +43,7 @@ export class AurumServer {
         string,
         {
             source: ArrayDataSource<any>;
-            authenticator(
-                token: string,
-                operation:
-                    | "read"
-                    | "replace"
-                    | "append"
-                    | "prepend"
-                    | "removeRight"
-                    | "removeLeft"
-                    | "remove"
-                    | "swap"
-                    | "clear"
-                    | "merge"
-                    | "insert"
-            ): boolean;
+            authenticator(token: string, operation: "read"): boolean;
         }
     >;
 
@@ -91,20 +78,12 @@ export class AurumServer {
         server.wsServer.on("connection", (ws: ws) => {
             const client = new Client(ws);
             server.wsServerClients.push(client);
-            console.log(
-                //@ts-ignore
-                `Client connected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
-            );
 
             ws.on("message", (data) => {
                 server.processMessage(client, data);
             });
 
             ws.on("close", () => {
-                console.log(
-                    //@ts-ignore
-                    `Client disconnected ${ws._socket.remoteAddress}:${ws._socket.remotePort}`
-                );
                 server.wsServerClients.splice(
                     server.wsServerClients.indexOf(client),
                     1
@@ -121,7 +100,8 @@ export class AurumServer {
     private processMessage(sender: Client, data: ws.Data): void {
         if (typeof data === "string") {
             if (data.length >= this.config.maxMessageSize) {
-                console.error(
+                this.config.onError?.(
+                    sender,
                     `Received message with size ${data.length} max allowed is ${this.config.maxMessageSize}`
                 );
                 return;
@@ -137,6 +117,9 @@ export class AurumServer {
                         break;
                     case RemoteProtocol.LISTEN_DUPLEX_DATASOURCE:
                         this.listenDuplexDataSource(message, sender);
+                        break;
+                    case RemoteProtocol.LISTEN_ARRAY_DATASOURCE:
+                        this.listenArrayDataSource(message, sender);
                         break;
                     case RemoteProtocol.UPDATE_DUPLEX_DATASOURCE:
                         this.updateDuplexDataSource(message, sender);
@@ -177,6 +160,40 @@ export class AurumServer {
                 id,
                 errorCode: 404,
                 error: "No such datasource",
+            });
+        }
+    }
+
+    private listenArrayDataSource(message: any, sender: Client) {
+        const id = message.id;
+        if (this.exposedArrayDataSources.has(id)) {
+            const endpoint = this.exposedArrayDataSources.get(id);
+            const token = new CancellationToken();
+            sender.subscriptions.set(id, token);
+            if (endpoint.authenticator(message.token, "read")) {
+                endpoint.source.listenAndRepeat((change) => {
+                    change = Object.assign({}, change);
+                    // Optimize network traffic by removing fields not used by the client
+                    delete change.operation;
+                    delete change.previousState;
+                    delete change.newState;
+                    sender.sendMessage(RemoteProtocol.UPDATE_ARRAY_DATASOURCE, {
+                        id,
+                        change,
+                    });
+                }, token);
+            } else {
+                sender.sendMessage(RemoteProtocol.LISTEN_ARRAY_DATASOURCE_ERR, {
+                    id,
+                    errorCode: 401,
+                    error: "Unauthorized",
+                });
+            }
+        } else {
+            sender.sendMessage(RemoteProtocol.LISTEN_ARRAY_DATASOURCE_ERR, {
+                id,
+                errorCode: 404,
+                error: "No such array datasource",
             });
         }
     }
@@ -244,28 +261,6 @@ export class AurumServer {
     }
 
     //@ts-ignore
-    private listenArrayDataSource(id: string, sender: Client) {
-        const endpoint = this.exposedArrayDataSources.get(id);
-        const token = new CancellationToken();
-        sender.subscriptions.set(id, token);
-        endpoint.source.listen((change) => {
-            change = Object.assign({}, change);
-            if (change.operation !== "merge") {
-                delete change.previousState;
-                delete change.newState;
-            }
-            sender.sendMessage(RemoteProtocol.UPDATE_ARRAY_DATASOURCE, {
-                id,
-                change,
-            });
-        }, token);
-        sender.sendMessage(RemoteProtocol.UPDATE_ARRAY_DATASOURCE, {
-            id,
-            value: endpoint.source.getData(),
-        });
-    }
-
-    //@ts-ignore
     private cancelSubscriptionToExposedSource(sender: Client, message: any) {
         const sub = sender.subscriptions.get(message.url);
         if (sub) {
@@ -274,9 +269,6 @@ export class AurumServer {
         }
     }
 
-    /**
-     * Makes data public anything pushed to the exposed source will be broadcasted to everyone listening to it
-     */
     public exposeDataSource<I>(
         id: string,
         source: DataSource<I>,
@@ -288,9 +280,17 @@ export class AurumServer {
         });
     }
 
-    /**
-     * Makes data public anything pushed to the exposed source will be broadcasted to everyone listening to it
-     */
+    public exposeArrayDataSource<I>(
+        id: string,
+        source: ArrayDataSource<I>,
+        authenticate: (token: string, operation: "read") => boolean = () => true
+    ): void {
+        this.exposedArrayDataSources.set(id, {
+            authenticator: authenticate,
+            source,
+        });
+    }
+
     public exposeDuplexDataSource<I>(
         id: string,
         source: DuplexDataSource<I>,
