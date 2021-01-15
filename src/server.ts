@@ -9,6 +9,7 @@ import { Server as HttpServer } from "http";
 import { Server as HttpsServer } from "https";
 import * as ws from "ws";
 import { Client } from "./client";
+import { Endpoint, Router } from "./router";
 
 export interface AurumServerConfig {
     reuseServer?: HttpServer | HttpsServer;
@@ -24,39 +25,26 @@ export class AurumServer {
     private wsServerClients: Client[];
     private config: AurumServerConfig;
 
-    private exposedDataSources: Map<
-        string,
-        {
-            source: DataSource<any>;
-            authenticator(token: string, operation: "read"): boolean;
-        }
-    >;
-
-    private exposedDuplexDataSources: Map<
-        string,
-        {
-            source: DuplexDataSource<any>;
-            authenticator(token: string, operation: "read" | "write"): boolean;
-        }
-    >;
-    private exposedArrayDataSources: Map<
-        string,
-        {
-            source: ArrayDataSource<any>;
-            authenticator(token: string, operation: "read"): boolean;
-        }
-    >;
+    private routers: { [key: string]: Router };
 
     private constructor(config: AurumServerConfig) {
         this.config = config;
 
-        this.exposedDataSources = new Map();
-        this.exposedDuplexDataSources = new Map();
-        this.exposedArrayDataSources = new Map();
+        this.routers = {
+            [""]: new Router(),
+        };
     }
 
     public getClients(): ReadonlyArray<Client> {
         return this.wsServerClients;
+    }
+
+    public exposeRouter(route: string, router: Router): void {
+        this.routers[route] = router;
+    }
+
+    public removeRouter(route: string): void {
+        delete this.routers[route];
     }
 
     public static create(config?: AurumServerConfig): AurumServer {
@@ -112,6 +100,21 @@ export class AurumServer {
                 const type: RemoteProtocol = message.type;
                 sender.timeSinceLastMessage = Date.now();
                 switch (type) {
+                    case RemoteProtocol.CANCEL_DATASOURCE:
+                        this.cancelSubscriptionToExposedSource(message, sender);
+                        break;
+                    case RemoteProtocol.CANCEL_ARRAY_DATASOURCE:
+                        this.cancelSubscriptionToExposedArraySource(
+                            message,
+                            sender
+                        );
+                        break;
+                    case RemoteProtocol.CANCEL_DUPLEX_DATASOURCE:
+                        this.cancelSubscriptionToExposedDuplexSource(
+                            message,
+                            sender
+                        );
+                        break;
                     case RemoteProtocol.LISTEN_DATASOURCE:
                         this.listenDataSource(message, sender);
                         break;
@@ -136,10 +139,10 @@ export class AurumServer {
 
     private listenDataSource(message: any, sender: Client) {
         const id = message.id;
-        if (this.exposedDataSources.has(id)) {
-            const endpoint = this.exposedDataSources.get(id);
+        const endpoint = this.getExposedDataSource(id);
+        if (endpoint) {
             const token = new CancellationToken();
-            sender.subscriptions.set(id, token);
+            sender.dsSubscriptions.set(id, token);
 
             if (endpoint.authenticator(message.token, "read")) {
                 endpoint.source.listenAndRepeat((value) => {
@@ -164,12 +167,61 @@ export class AurumServer {
         }
     }
 
+    public getExposedDataSource(id: string): Endpoint<DataSource<any>> {
+        for (const routerPath in this.routers) {
+            if (routerPath !== "" && id.startsWith(routerPath)) {
+                const result = this.routers[routerPath].getExposedDataSource(
+                    id.substring(routerPath.length)
+                );
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        return this.routers[""].getExposedDataSource(id);
+    }
+
+    public getExposedArrayDataSource(
+        id: string
+    ): Endpoint<ArrayDataSource<any>> {
+        for (const routerPath in this.routers) {
+            if (routerPath !== "" && id.startsWith(routerPath)) {
+                const result = this.routers[
+                    routerPath
+                ].getExposedArrayDataSource(id.substring(routerPath.length));
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        return this.routers[""].getExposedArrayDataSource(id);
+    }
+
+    public getExposedDuplexDataSource(
+        id: string
+    ): Endpoint<DuplexDataSource<any>, "read" | "write"> {
+        for (const routerPath in this.routers) {
+            if (routerPath !== "" && id.startsWith(routerPath)) {
+                const result = this.routers[
+                    routerPath
+                ].getExposedDuplexDataSource(id.substring(routerPath.length));
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        return this.routers[""].getExposedDuplexDataSource(id);
+    }
+
     private listenArrayDataSource(message: any, sender: Client) {
         const id = message.id;
-        if (this.exposedArrayDataSources.has(id)) {
-            const endpoint = this.exposedArrayDataSources.get(id);
+        const endpoint = this.getExposedArrayDataSource(id);
+        if (endpoint) {
             const token = new CancellationToken();
-            sender.subscriptions.set(id, token);
+            sender.adsSubscriptions.set(id, token);
             if (endpoint.authenticator(message.token, "read")) {
                 endpoint.source.listenAndRepeat((change) => {
                     change = Object.assign({}, change);
@@ -200,10 +252,10 @@ export class AurumServer {
 
     private listenDuplexDataSource(message: any, sender: Client) {
         const id = message.id;
-        if (this.exposedDuplexDataSources.has(id)) {
-            const endpoint = this.exposedDuplexDataSources.get(id);
+        const endpoint = this.getExposedDuplexDataSource(id);
+        if (endpoint) {
             const token = new CancellationToken();
-            sender.subscriptions.set(id, token);
+            sender.ddsSubscriptions.set(id, token);
 
             if (endpoint.authenticator(message.token, "read")) {
                 endpoint.source.listenAndRepeat((value) => {
@@ -236,9 +288,8 @@ export class AurumServer {
 
     private updateDuplexDataSource(message: any, sender: Client) {
         const id = message.id;
-        if (this.exposedDuplexDataSources.has(id)) {
-            const endpoint = this.exposedDuplexDataSources.get(id);
-
+        const endpoint = this.getExposedDuplexDataSource(id);
+        if (endpoint) {
             if (endpoint.authenticator(message.token, "write")) {
                 endpoint.source.updateUpstream(message.value);
             } else {
@@ -260,12 +311,33 @@ export class AurumServer {
         }
     }
 
-    //@ts-ignore
-    private cancelSubscriptionToExposedSource(sender: Client, message: any) {
-        const sub = sender.subscriptions.get(message.url);
+    private cancelSubscriptionToExposedSource(message: any, sender: Client) {
+        const sub = sender.dsSubscriptions.get(message.url);
         if (sub) {
             sub.cancel();
-            sender.subscriptions.delete(message.url);
+            sender.dsSubscriptions.delete(message.url);
+        }
+    }
+
+    private cancelSubscriptionToExposedArraySource(
+        message: any,
+        sender: Client
+    ) {
+        const sub = sender.adsSubscriptions.get(message.url);
+        if (sub) {
+            sub.cancel();
+            sender.adsSubscriptions.delete(message.url);
+        }
+    }
+
+    private cancelSubscriptionToExposedDuplexSource(
+        message: any,
+        sender: Client
+    ) {
+        const sub = sender.ddsSubscriptions.get(message.url);
+        if (sub) {
+            sub.cancel();
+            sender.ddsSubscriptions.delete(message.url);
         }
     }
 
@@ -274,10 +346,7 @@ export class AurumServer {
         source: DataSource<I>,
         authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
-        this.exposedDataSources.set(id, {
-            authenticator: authenticate,
-            source,
-        });
+        this.routers[""].exposeDataSource(id, source, authenticate);
     }
 
     public exposeArrayDataSource<I>(
@@ -285,10 +354,7 @@ export class AurumServer {
         source: ArrayDataSource<I>,
         authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
-        this.exposedArrayDataSources.set(id, {
-            authenticator: authenticate,
-            source,
-        });
+        this.routers[""].exposeArrayDataSource(id, source, authenticate);
     }
 
     public exposeDuplexDataSource<I>(
@@ -299,9 +365,6 @@ export class AurumServer {
             operation: "read" | "write"
         ) => boolean = () => true
     ): void {
-        this.exposedDuplexDataSources.set(id, {
-            authenticator: authenticate,
-            source,
-        });
+        this.routers[""].exposeDuplexDataSource(id, source, authenticate);
     }
 }

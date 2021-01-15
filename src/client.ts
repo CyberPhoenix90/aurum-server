@@ -2,13 +2,17 @@ import { CancellationToken, RemoteProtocol } from "aurumjs";
 import * as ws from "ws";
 
 export class Client {
-    public readonly subscriptions: Map<string, CancellationToken>;
+    public readonly dsSubscriptions: Map<string, CancellationToken>;
+    public readonly adsSubscriptions: Map<string, CancellationToken>;
+    public readonly ddsSubscriptions: Map<string, CancellationToken>;
     public readonly connection: ws;
     public timeSinceLastMessage: number;
 
     constructor(connection: ws) {
         this.connection = connection;
-        this.subscriptions = new Map();
+        this.dsSubscriptions = new Map();
+        this.adsSubscriptions = new Map();
+        this.ddsSubscriptions = new Map();
     }
 
     public sendMessage(messageType: RemoteProtocol, payload: any) {
@@ -16,7 +20,13 @@ export class Client {
     }
 
     public dispose(): void {
-        for (const sub of this.subscriptions.values()) {
+        for (const sub of this.dsSubscriptions.values()) {
+            sub.cancel();
+        }
+        for (const sub of this.adsSubscriptions.values()) {
+            sub.cancel();
+        }
+        for (const sub of this.ddsSubscriptions.values()) {
             sub.cancel();
         }
     }
