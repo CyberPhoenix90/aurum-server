@@ -189,16 +189,14 @@ export class AurumServer {
             if (routerPath !== "" && id.startsWith(routerPath)) {
                 const result = this.routers[
                     routerPath
-                ].getExposedReadOnlyArrayDataSource(
-                    id.substring(routerPath.length)
-                );
+                ].getExposedArrayDataSource(id.substring(routerPath.length));
                 if (result) {
                     return result;
                 }
             }
         }
 
-        return this.routers[""].getExposedReadOnlyArrayDataSource(id);
+        return this.routers[""].getExposedArrayDataSource(id);
     }
 
     public getExposedDuplexDataSource(
@@ -356,11 +354,7 @@ export class AurumServer {
         source: ReadOnlyArrayDataSource<I>,
         authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
-        this.routers[""].exposeReadOnlyArrayDataSource(
-            id,
-            source,
-            authenticate
-        );
+        this.routers[""].exposeArrayDataSource(id, source, authenticate);
     }
 
     public exposeDuplexDataSource<I>(

@@ -43,7 +43,7 @@ export class Router {
         return this.exposedDataSources.get(id);
     }
 
-    public getExposedReadOnlyArrayDataSource(
+    public getExposedArrayDataSource(
         id: string
     ): Endpoint<ReadOnlyArrayDataSource<any>> {
         return this.exposedReadOnlyArrayDataSources.get(id);
@@ -66,7 +66,7 @@ export class Router {
         });
     }
 
-    public exposeReadOnlyArrayDataSource<I>(
+    public exposeArrayDataSource<I>(
         id: string,
         source: ReadOnlyArrayDataSource<I>,
         authenticate?: (token: string, operation: "read") => boolean
