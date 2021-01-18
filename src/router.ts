@@ -1,4 +1,8 @@
-import { DataSource, ArrayDataSource, DuplexDataSource } from "aurumjs";
+import {
+    ReadOnlyArrayDataSource,
+    DuplexDataSource,
+    ReadOnlyDataSource,
+} from "aurumjs";
 
 export interface Endpoint<S, T = "read"> {
     source: S;
@@ -9,7 +13,7 @@ export class Router {
     private exposedDataSources: Map<
         string,
         {
-            source: DataSource<any>;
+            source: ReadOnlyDataSource<any>;
             authenticator(token: string, operation: "read"): boolean;
         }
     >;
@@ -21,10 +25,10 @@ export class Router {
             authenticator(token: string, operation: "read" | "write"): boolean;
         }
     >;
-    private exposedArrayDataSources: Map<
+    private exposedReadOnlyArrayDataSources: Map<
         string,
         {
-            source: ArrayDataSource<any>;
+            source: ReadOnlyArrayDataSource<any>;
             authenticator(token: string, operation: "read"): boolean;
         }
     >;
@@ -32,17 +36,17 @@ export class Router {
     constructor() {
         this.exposedDataSources = new Map();
         this.exposedDuplexDataSources = new Map();
-        this.exposedArrayDataSources = new Map();
+        this.exposedReadOnlyArrayDataSources = new Map();
     }
 
-    public getExposedDataSource(id: string): Endpoint<DataSource<any>> {
+    public getExposedDataSource(id: string): Endpoint<ReadOnlyDataSource<any>> {
         return this.exposedDataSources.get(id);
     }
 
-    public getExposedArrayDataSource(
+    public getExposedReadOnlyArrayDataSource(
         id: string
-    ): Endpoint<ArrayDataSource<any>> {
-        return this.exposedArrayDataSources.get(id);
+    ): Endpoint<ReadOnlyArrayDataSource<any>> {
+        return this.exposedReadOnlyArrayDataSources.get(id);
     }
 
     public getExposedDuplexDataSource(
@@ -53,7 +57,7 @@ export class Router {
 
     public exposeDataSource<I>(
         id: string,
-        source: DataSource<I>,
+        source: ReadOnlyDataSource<I>,
         authenticate: (token: string, operation: "read") => boolean = () => true
     ): void {
         this.exposedDataSources.set(id, {
@@ -62,12 +66,12 @@ export class Router {
         });
     }
 
-    public exposeArrayDataSource<I>(
+    public exposeReadOnlyArrayDataSource<I>(
         id: string,
-        source: ArrayDataSource<I>,
+        source: ReadOnlyArrayDataSource<I>,
         authenticate?: (token: string, operation: "read") => boolean
     ): void {
-        this.exposedArrayDataSources.set(id, {
+        this.exposedReadOnlyArrayDataSources.set(id, {
             authenticator: authenticate,
             source,
         });
