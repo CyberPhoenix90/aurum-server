@@ -349,7 +349,7 @@ export class AurumServer {
         this.routers[""].exposeDataSource(id, source, authenticate);
     }
 
-    public exposeReadOnlyArrayDataSource<I>(
+    public exposeArrayDataSource<I>(
         id: string,
         source: ReadOnlyArrayDataSource<I>,
         authenticate: (token: string, operation: "read") => boolean = () => true
