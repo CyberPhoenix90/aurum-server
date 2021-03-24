@@ -1,31 +1,31 @@
 {
-    "name": "aurum-server",
-    "version": "0.0.4",
-    "description": "Websocket powered webserver for Aurum.js allowing the sychronization between datasources of a server and a client",
-    "main": "prebuilt/cjs/aurum-server.js",
-    "typings": "prebuilt/esnext/aurum-server.d.ts",
-    "dependencies": {
-        "@types/node": "^14.14.12",
-        "@types/ws": "^7.2.7",
-        "aurumjs": "^0.6.0",
-        "ws": "^7.3.1"
-    },
-    "devDependencies": {},
-    "scripts": {
-        "build": "tsc",
-        "watch": "tsc -w",
-        "prepublish": "npm run deploy",
-        "deploy": "npm run build && tsc -p tsconfig.cjs.json"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/CyberPhoenix90/aurum-server.git"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "bugs": {
-        "url": "https://github.com/CyberPhoenix90/aurum-server/issues"
-    },
-    "homepage": "https://github.com/CyberPhoenix90/aurum-server#readme"
+  "name": "aurum-server",
+  "version": "0.0.7",
+  "description": "Websocket powered webserver for Aurum.js allowing the sychronization between datasources of a server and a client",
+  "main": "prebuilt/cjs/aurum-server.js",
+  "typings": "prebuilt/esnext/aurum-server.d.ts",
+  "dependencies": {
+    "@types/node": "^14.14.12",
+    "@types/ws": "^7.2.7",
+    "aurumjs": "^0.6.0",
+    "ws": "^7.3.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prepublish": "npm run deploy",
+    "deploy": "npm run build && tsc -p tsconfig.cjs.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CyberPhoenix90/aurum-server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/CyberPhoenix90/aurum-server/issues"
+  },
+  "homepage": "https://github.com/CyberPhoenix90/aurum-server#readme"
 }
